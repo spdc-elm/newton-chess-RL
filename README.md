@@ -2,12 +2,9 @@
 
 Eight-way pushes, Newton-cradle chains, fewest border stones wins.
 
-Open `newton-force.html` (or the GitHub Pages URL). No install.
+Play: https://spdc-elm.github.io/newton-chess-RL/
 
-## Pages
-
-Enable GitHub Pages on this repo (`Deploy from a branch` → `/`).  
-`index.html` just opens the built game file.
+Or open `newton-force.html` locally. No install.
 
 ## Build
 
