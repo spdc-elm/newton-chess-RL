@@ -1,3 +1,6 @@
+# Built site (CI / local build only)
+newton-force.html
+
 # Training artifacts (checkpoints, self-play, local reports)
 rl/runs/
 

@@ -1206,27 +1206,16 @@ function maybeAIMove(){
 }
 
 function renderModelVersion(){
+  const el = $('#modelVersionDetail');
+  if(!el) return;
   const meta = window.NF_WEB_MODEL && window.NF_WEB_MODEL.meta;
-  const banner = $('#modelVersion');
-  const detail = $('#modelVersionDetail');
-  if(!meta){
-    if(banner) banner.textContent = 'AI 未内置';
-    if(detail) detail.textContent = '未内置';
-    return;
-  }
+  if(!meta){ el.textContent = '未内置'; return; }
   const ver = meta.version || (meta.iter != null ? ('iter' + meta.iter) : 'unknown');
-  const tip = [meta.source, meta.exported_at].filter(Boolean).join(' · ');
-  if(banner){
-    banner.textContent = 'AI ' + ver;
-    if(tip) banner.title = tip;
-  }
-  if(detail){
-    const bits = [ver];
-    if(meta.trained_size) bits.push(meta.trained_size + '×' + meta.trained_size);
-    if(meta.value_target) bits.push(meta.value_target);
-    detail.textContent = bits.join(' · ');
-    if(tip) detail.title = tip;
-  }
+  const bits = [ver];
+  if(meta.trained_size) bits.push(meta.trained_size + '×' + meta.trained_size);
+  if(meta.value_target) bits.push(meta.value_target);
+  el.textContent = bits.join(' · ');
+  el.title = [meta.source, meta.exported_at].filter(Boolean).join(' · ');
 }
 function loadAIModel(){
   try{

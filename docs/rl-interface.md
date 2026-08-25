@@ -123,7 +123,7 @@ python3 tools/build_html.py
 sh test/run.sh
 ```
 
-构建脚本会把 `meta` 写进 `newton-force.html` 的 `<!-- NF_MODEL ... -->` 注释；页面「对局设置 → 内置模型」读取同一个 `meta`。不要手改 HTML 里的版本字串。
+构建脚本会把 `meta` 写进 `newton-force.html` 的 `<!-- NF_MODEL ... -->` 注释；页面「对局设置 → 内置模型」读取同一个 `meta`。不要手改 HTML 里的版本字串。生成的 `newton-force.html` 不进 Git，由 CI 构建并发布到 Pages。
 
 ## 模型接入契约
 
