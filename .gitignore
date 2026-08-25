@@ -1,0 +1,27 @@
+# Training artifacts (checkpoints, self-play, local reports)
+rl/runs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Node / test scratch
+node_modules/
+.inline*.js
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local logs
+*.log
+/tmp/

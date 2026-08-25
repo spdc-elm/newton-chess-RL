@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#f6f3ec">
+<meta name="description" content="牛顿棋 NEWTON CHESS — 八向推力 · 牛顿摆传递 · 外围少者胜。离线单文件棋类游戏，支持 2-6 人与自定义棋盘。">
+<title>牛顿棋 · NEWTON CHESS</title>
+<!--
+  牛顿棋 NEWTON CHESS — 离线单文件版
+  规则要点：
+  · 轮流把己方棋子落到任意空格
+  · 落子同时向周围 8 个方向发出推力；每个方向上与落点相邻的连续棋子链，
+    按牛顿摆规则只有链末端一枚被推动一格（隔山打牛，中间不动）
+  · 链末端之外是空格则移入；链末端已贴边则该方向不动；棋子永远不会被推出棋盘
+  · 外围一圈占满自动结算，或随时手动结算；边界棋子最少者胜
+-->
+<style>
+:root{
+  --bg:#f6f3ec; --panel:#ffffff; --panel2:#f1ede3; --line:#e2dccd;
+  --text:#2b2a28; --muted:#7c7770; --accent:#c98a14; --danger:#c93434;
+  --bw:9; --bh:9;
+  --p0:#d6403f; --p1:#2f5dd6; --p2:#2f8f57; --p3:#d68a1c; --p4:#7c3fb0; --p5:#068fb0;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;}
+body{
+  background:radial-gradient(1100px 700px at 50% -180px, #ffffff 0%, var(--bg) 62%) fixed;
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif;
+  min-height:100vh;
+  min-height:100dvh;
+  display:flex; flex-direction:column; align-items:center;
+  padding:calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 20px);
+  touch-action:manipulation;
+  -webkit-user-select:none; user-select:none;
+}
+/* ---------- Lichess 式整体布局 ----------
+   手机：标题/计分 → 棋盘 → 跳步控制 → 走法树 → 悔棋/结算/清空 → AI 工具 → 设置/规则
+   桌面(≥900px)：棋盘列在左，分析列在右，高度跟随棋盘实际高度 */
+.game-shell{width:100%; max-width:640px; display:flex; flex-direction:column; align-items:center; gap:12px;}
+.board-column{width:100%; display:flex; flex-direction:column; align-items:center; gap:12px;}
+.analysis-panel{width:min(100%,560px); display:flex; flex-direction:column; gap:10px;}
+.analysis-header{display:flex; justify-content:space-between; align-items:center;
+  font-weight:800; font-size:15px; letter-spacing:1px; color:var(--muted); padding:0 2px;}
+.modelver{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; max-width:62%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+#replayPos{font-variant-numeric:tabular-nums; font-size:13px; font-weight:600; color:var(--text);}
+body.replay #replayPos{color:var(--accent);}
+.underboard{width:min(100%,560px); display:flex; flex-direction:column; gap:12px;}
+
+header{text-align:center;}
+h1{font-size:24px; margin:0; letter-spacing:2px; font-weight:800;}
+h1 span{font-size:11px; color:var(--muted); letter-spacing:4px; font-weight:600; margin-left:8px; vertical-align:2px;}
+
+/* ---------- 计分板 ---------- */
+#scorebar{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; width:100%;}
+.chip{
+  display:flex; align-items:center; gap:7px;
+  background:var(--panel2); border:1px solid var(--line); border-radius:999px;
+  padding:6px 13px; font-size:14px; line-height:1;
+  transition:box-shadow .25s, border-color .25s;
+}
+.chip b{font-size:15px; font-variant-numeric:tabular-nums;}
+.chip .dot{width:12px; height:12px; border-radius:50%; background:var(--pc);
+  box-shadow:inset 0 -2px 3px rgba(0,0,0,.22), 0 0 5px -1px var(--pc);}
+.chip.cur{border-color:var(--pc); box-shadow:0 0 0 1px var(--pc), 0 3px 12px -4px var(--pc);}
+.chip.cur::after{content:'行动'; font-size:10px; color:var(--pc); font-weight:700; letter-spacing:1px; margin-left:2px;}
+.p0{--pc:var(--p0);} .p1{--pc:var(--p1);} .p2{--pc:var(--p2);}
+.p3{--pc:var(--p3);} .p4{--pc:var(--p4);} .p5{--pc:var(--p5);}
+
+#statusrow{display:flex; align-items:center; gap:10px; width:min(100%,560px); font-size:13px; color:var(--muted); min-height:20px;}#statusrow .tn{font-weight:800;}
+.bar{flex:1; height:4px; background:var(--panel2); border-radius:99px; overflow:hidden; min-width:40px;}
+.bar i{display:block; height:100%; width:0%; background:linear-gradient(90deg,#e6a82e,#d6403f); border-radius:99px; transition:width .35s;}
+#fillText{white-space:nowrap; font-variant-numeric:tabular-nums;}
+
+/* ---------- 棋盘 ---------- */
+#boardWrap{width:min(100%, 560px);}
+#boardWrap{width:max(240px, min(100%, 560px, calc((100dvh - 262px) * (var(--bw) / var(--bh)))));}
+#board{
+  position:relative; width:100%; aspect-ratio:1/1;
+  background:#fbf9f3; border:1px solid #e2dccd; border-radius:12px; overflow:hidden;
+  box-shadow:0 14px 34px -16px rgba(60,54,42,.3), inset 0 0 46px rgba(60,54,42,.05);
+  cursor:pointer;
+}
+#cells{position:absolute; inset:0; display:grid;}
+.cell{border-right:1px solid rgba(60,54,42,.10); border-bottom:1px solid rgba(60,54,42,.10);}
+.cell.alt{background:rgba(60,54,42,.028);}
+.cell.ring{background:rgba(201,138,20,.10);}
+.cell.ring.alt{background:rgba(201,138,20,.14);}
+
+#marker{position:absolute; display:none; z-index:1; pointer-events:none;}
+#marker::before{
+  content:''; position:absolute; inset:7%;
+  border:2px solid var(--accent); border-radius:24%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) top    left  / 24% 24% no-repeat,
+    linear-gradient(#000 0 0) top    right / 24% 24% no-repeat,
+    linear-gradient(#000 0 0) bottom left  / 24% 24% no-repeat,
+    linear-gradient(#000 0 0) bottom right / 24% 24% no-repeat;
+  mask:
+    linear-gradient(#000 0 0) top    left  / 24% 24% no-repeat,
+    linear-gradient(#000 0 0) top    right / 24% 24% no-repeat,
+    linear-gradient(#000 0 0) bottom left  / 24% 24% no-repeat,
+    linear-gradient(#000 0 0) bottom right / 24% 24% no-repeat;
+}
+#hintMarker{position:absolute; display:none; z-index:1; pointer-events:none;}
+#hintMarker::before{content:''; position:absolute; inset:9%; border-radius:26%; border:2px dashed var(--accent); box-shadow:0 0 0 2px rgba(201,138,20,.18), inset 0 0 12px rgba(201,138,20,.16); animation:hintPulse 1.1s ease-in-out infinite;}
+#hintMarker::after{content:'AI'; position:absolute; right:10%; top:7%; color:#fff; background:var(--accent); border-radius:5px; padding:1px 4px; font-size:10px; line-height:15px; font-weight:900; box-shadow:0 2px 5px rgba(0,0,0,.18);}
+@keyframes hintPulse{0%,100%{opacity:.62; transform:scale(.96);} 50%{opacity:1; transform:scale(1.02);}}
+
+#pieces{position:absolute; inset:0; z-index:2; pointer-events:none;}
+.piece{
+  position:absolute;
+  width:calc(100% / var(--bw)); height:calc(100% / var(--bh));
+  transition:left .3s cubic-bezier(.25,.8,.3,1.18), top .3s cubic-bezier(.25,.8,.3,1.18),
+             transform .24s ease, opacity .24s ease;
+  will-change:left,top;
+}
+#pieces.no-anim .piece{transition:none !important;}
+.piece::before{
+  content:''; position:absolute; inset:8%; border-radius:50%;
+  background:radial-gradient(circle at 32% 28%, var(--pcl), var(--pc) 55%, var(--pcd));
+  box-shadow:0 2px 5px rgba(0,0,0,.28), inset 0 -3px 6px rgba(0,0,0,.2), inset 0 2px 3px rgba(255,255,255,.35);
+}
+.piece svg{position:absolute; left:8%; top:8%; width:84%; height:84%;}
+.piece.drop{animation:drop .34s cubic-bezier(.2,.8,.3,1.35);}
+@keyframes drop{0%{transform:scale(1.7); opacity:0;} 55%{opacity:1;} 100%{transform:scale(1);}}
+@keyframes drop-out{0%{transform:scale(1); opacity:1;} 100%{transform:scale(1.7); opacity:0;}}
+.piece.drop-out{animation:drop-out .34s cubic-bezier(.2,.8,.3,1.35) forwards;}
+.piece.slide-pulse::before{animation:pulse .65s ease-out;}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(60,54,42,.6), 0 2px 5px rgba(0,0,0,.28);}
+  100%{box-shadow:0 0 0 12px rgba(60,54,42,0), 0 2px 5px rgba(0,0,0,.28);}
+}
+.p0{--pc:var(--p0); --pcl:#ec7a78; --pcd:#8f1d1c;}
+.p1{--pc:var(--p1); --pcl:#6e8ff0; --pcd:#1d3590;}
+.p2{--pc:var(--p2); --pcl:#5fc090; --pcd:#196039;}
+.p3{--pc:var(--p3); --pcl:#f0b95e; --pcd:#955f08;}
+.p4{--pc:var(--p4); --pcl:#b07adf; --pcd:#4a1f74;}
+.p5{--pc:var(--p5); --pcl:#3fc0d6; --pcd:#055874;}
+
+/* ---------- 按钮 ---------- */button{
+  font:inherit; color:var(--text); font-weight:600;
+  background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:11px 12px; min-height:46px; cursor:pointer;
+  transition:transform .08s, background .2s, border-color .2s, box-shadow .2s;
+}
+button:hover{border-color:#c9bfa6; box-shadow:0 2px 6px -2px rgba(60,54,42,.18);}
+button:active{transform:scale(.96);}
+button:disabled{opacity:.4; pointer-events:none;}
+button.primary{background:linear-gradient(180deg,#e6a82e,#c98a14); color:#fff; border-color:#a6710f; box-shadow:0 2px 8px -2px rgba(201,138,20,.5);}
+button.warn{background:#fbe8e8; border-color:var(--danger); color:var(--danger);}
+#controls{display:grid; grid-template-columns:1fr 1fr 1.2fr; gap:8px; width:min(100%,560px);}
+
+/* ---------- 复盘控件 + 走法树（Lichess 式） ---------- */
+.replay-controls{display:flex; gap:8px; width:min(100%,560px);}
+.replay-controls .rbtn{flex:1; width:auto; min-width:0; height:46px; min-height:46px; font-size:15px;
+  border-radius:12px; background:var(--panel); border:1px solid var(--line); color:var(--text);}
+.replay-controls .rbtn:first-child,.replay-controls .rbtn:last-child{flex:1.3;}
+.rbtn:hover:not(:disabled){border-color:#c9bfa6; box-shadow:0 2px 6px -2px rgba(60,54,42,.18);}
+.rbtn:active:not(:disabled){transform:scale(.94);}
+.rbtn:disabled{opacity:.35; pointer-events:none;}
+#moveTreeScroll{
+  order:6;
+  width:min(100%,560px); min-height:110px; max-height:32vh;
+  overflow-y:auto; overscroll-behavior:contain;
+  background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:9px 11px; box-shadow:0 4px 14px -8px rgba(60,54,42,.14);
+  line-height:1.4;
+}
+.mtok{
+  display:inline-flex; align-items:center; gap:4px;
+  padding:3px 8px; margin:2px 3px 2px 0; border-radius:8px;
+  font-size:13px; line-height:1.25; cursor:pointer; color:var(--text);
+  vertical-align:middle; white-space:nowrap;
+}
+.mtok b{font-size:11px; font-weight:600; color:var(--muted); margin-right:1px;}
+.mtok .dot{flex:none; width:8px; height:8px; border-radius:50%; background:var(--pc);
+  box-shadow:inset 0 -1px 2px rgba(0,0,0,.28);}
+.mtok:hover{background:var(--panel2);}
+.mtok.path{font-weight:700;}
+.mtok.cur{
+  background:linear-gradient(180deg,#e6a82e,#c98a14); color:#fff; font-weight:700;
+  box-shadow:0 2px 8px -2px rgba(201,138,20,.55);
+}
+.mtok.cur b{color:rgba(255,255,255,.85);}
+.mtok.cur .dot{background:#fff; box-shadow:none;}
+.varblock{
+  display:block; margin:3px 0 3px 10px; padding:2px 6px 2px 8px;
+  background:var(--panel2); border-left:2px solid #d9cfb4; border-radius:0 9px 9px 0;
+}
+.varblock .mtok{font-weight:500;}
+.mtree-empty{color:var(--muted); font-size:13px; padding:6px 2px;}
+#forkRow{display:none; flex-wrap:wrap; gap:6px; align-items:center;
+  width:min(100%,560px); font-size:12px; color:var(--muted);}
+#forkRow.show{display:flex;}
+.forklabel{font-weight:700; letter-spacing:1px;}
+.forkbtn{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:7px 12px; min-height:34px; font-size:13px; border-radius:10px;
+  background:var(--panel); border:1px solid var(--line); color:var(--text); cursor:pointer;
+}
+.forkbtn .dot{flex:none; width:10px; height:10px; border-radius:50%; background:var(--pc);
+  box-shadow:inset 0 -1px 2px rgba(0,0,0,.25);}
+.forkbtn:hover{border-color:#c9bfa6; box-shadow:0 2px 6px -2px rgba(60,54,42,.18);}
+.forkbtn.sel{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); color:var(--accent); font-weight:700;}
+body.replay #board{box-shadow:0 14px 34px -16px rgba(60,54,42,.3), inset 0 0 0 2px rgba(201,138,20,.45);}
+
+/* 面板内元素顺序：主操作 → AI 分析状态 → 复盘跳步/棋谱/fork */
+#controls{order:1;}
+#hintControls{order:2;}
+#aiProgressRow{order:3;}
+#aiValueRow{order:4;}
+.replay-controls{order:5;}
+#moveTreeScroll{order:6;}
+#forkRow{order:7;}
+
+@media (min-width:900px){
+  .game-shell{
+    max-width:1060px;
+    display:grid;
+    grid-template-columns:minmax(420px,600px) minmax(300px,380px);
+    gap:16px;
+    align-items:start;
+    justify-content:center;
+  }
+  .board-column{grid-column:1;}
+  .analysis-panel{
+    grid-column:2; width:100%;
+    height:var(--board-rendered-height,560px); min-height:430px;
+  }
+  .underboard{grid-column:1 / -1; justify-self:center;}
+  /* 桌面：主操作和 AI 分析状态在棋谱上方 */
+  #controls{order:1;}
+  #hintControls{order:2;}
+  #aiProgressRow{order:3;}
+  #aiValueRow{order:4;}
+  .replay-controls{order:5;}
+  #moveTreeScroll{order:6; flex:1; min-height:0; max-height:none;}
+  #forkRow{order:7;}
+  body{padding-top:26px;}
+  h1{font-size:28px;}
+}
+#hintControls{display:flex; align-items:center; width:min(100%,560px); min-height:24px; padding:0 2px; color:var(--muted); font-size:12px; line-height:1.45;}
+button.hintbtn{color:#fff; background:linear-gradient(180deg,#e6a82e,#c98a14); border-color:#a6710f; white-space:nowrap; box-shadow:0 2px 8px -2px rgba(201,138,20,.45);}
+#hintStatus{flex:1;}
+#aiProgressRow{display:none; align-items:center; gap:8px; width:min(100%,560px); min-height:22px; color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums;}
+#aiProgressRow.show{display:flex;}
+#aiProgressText{white-space:nowrap; min-width:205px;}
+.ai-progress-bar{height:5px; flex:1; min-width:50px; overflow:hidden; border-radius:99px; background:var(--panel2); border:1px solid var(--line);}
+.ai-progress-bar i{display:block; width:0%; height:100%; border-radius:99px; background:linear-gradient(90deg,#e6a82e,#d6403f); transition:width .15s linear;}
+#aiValueRow{display:none; align-items:center; justify-content:center; width:min(100%,560px); min-height:24px; padding:5px 10px; border:1px solid var(--line); border-radius:9px; background:var(--panel2); color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums;}
+#aiValueRow.show{display:flex;}
+#aiValueText{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+
+/* ---------- 折叠面板 ---------- */
+details.panel{width:min(100%,560px); background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:0 14px; box-shadow:0 4px 14px -8px rgba(60,54,42,.14);}
+details.panel summary{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:13px 0; font-weight:700; font-size:15px; cursor:pointer; list-style:none;
+}
+details.panel summary::-webkit-details-marker{display:none;}
+details.panel summary::after{content:'⌄'; color:var(--muted); font-size:16px; transition:transform .2s;}
+details.panel[open] summary::after{transform:rotate(180deg);}
+.pbody{padding:2px 0 14px; font-size:14px; color:#5a564f;}
+.srow{display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-top:1px solid var(--line);}
+.step{display:flex; align-items:center; background:var(--panel2); border:1px solid var(--line); border-radius:10px; overflow:hidden;}
+.step button{width:42px; height:36px; min-height:0; border:none; border-radius:0; background:transparent; font-size:19px; padding:0;}
+.step button:active{background:rgba(60,54,42,.08); transform:none;}
+.step b{min-width:46px; text-align:center; font-size:15px; font-variant-numeric:tabular-nums;}
+.hint{font-size:12px; color:var(--muted); line-height:1.7; margin:10px 0 12px;}
+.wide{width:100%;}
+ol.rules{margin:6px 0 4px; padding-left:20px; line-height:1.9; font-size:13.5px; color:#5a564f;}
+ol.rules b{color:var(--text);}
+
+/* 开关 */
+.switch{position:relative; display:inline-block; width:46px; height:27px; flex:none;}
+.switch input{display:none;}
+.switch i{position:absolute; inset:0; background:var(--panel2); border:1px solid var(--line); border-radius:99px; transition:.2s;}
+.switch i::after{content:''; position:absolute; left:3px; top:3px; width:19px; height:19px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:.2s;}
+.switch input:checked + i{background:rgba(201,138,20,.28); border-color:#c9a85a;}
+.switch input:checked + i::after{transform:translateX(19px); background:var(--accent);}
+.modesel{font:inherit; font-size:14px; color:var(--text); background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 10px;}
+.simsinput{width:108px; box-sizing:border-box; font:inherit; font-size:14px; color:var(--text); background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 10px; text-align:center; font-variant-numeric:tabular-nums;}
+.aitag{font-style:normal; color:var(--accent); font-size:10px; font-weight:800; margin-left:2px; vertical-align:1px;}
+
+/* ---------- 结算浮层 ---------- */
+#overlay,#ioOverlay{
+  position:fixed; inset:0; z-index:50; padding:20px;
+  background:rgba(60,54,42,.42); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  display:flex; align-items:center; justify-content:center;
+}
+#overlay.hidden,#ioOverlay.hidden{display:none;}
+#resultPanel{
+  background:var(--panel); border:1px solid var(--line); border-radius:18px;
+  padding:22px 18px 16px; width:min(100%,420px);
+  box-shadow:0 24px 70px rgba(60,54,42,.28);
+  animation:rise .3s cubic-bezier(.2,.8,.3,1.2);
+}
+@keyframes rise{from{transform:translateY(24px) scale(.96); opacity:0;} to{transform:none; opacity:1;}}
+#ovTitle{text-align:center; margin:0; font-size:19px; letter-spacing:1px;}
+#ovSub{text-align:center; color:var(--accent); font-weight:800; margin:8px 0 16px; font-size:15px;}
+.rrow{display:flex; align-items:center; gap:10px; padding:11px 13px; border-radius:11px; background:var(--panel2); margin-bottom:8px; border:1px solid transparent;}
+.rrow.win{background:linear-gradient(90deg, rgba(201,138,20,.16), rgba(201,138,20,.04)); border-color:rgba(201,138,20,.5);}
+.rrow .rk{width:20px; font-weight:800; color:var(--muted); text-align:center; font-variant-numeric:tabular-nums;}
+.rrow.win .rk{color:var(--accent);}
+.rrow .dot{width:14px; height:14px; border-radius:50%; background:var(--pc); box-shadow:inset 0 -2px 3px rgba(0,0,0,.22);}
+.rrow .nm{flex:1;}
+.rrow b{font-variant-numeric:tabular-nums;}
+#ovBtns{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px;}
+#ovClose{grid-column:1/-1; background:transparent; border-color:transparent; color:var(--muted); min-height:40px;}
+
+/* ---------- 导入 / 导出 ---------- */
+#ioControls{display:grid; grid-template-columns:1fr 1fr; gap:8px; width:min(100%,560px);}
+#ioControls button{min-height:40px; font-size:14px; font-weight:500; color:#5a564f;}
+#ioPanel{
+  background:var(--panel); border:1px solid var(--line); border-radius:18px;
+  padding:20px 16px 14px; width:min(100%,460px);
+  box-shadow:0 24px 70px rgba(60,54,42,.28);
+  animation:rise .3s cubic-bezier(.2,.8,.3,1.2);
+}
+#ioPanel h2{margin:0; text-align:center; font-size:18px; letter-spacing:1px;}
+.iometa{text-align:center; color:var(--muted); font-size:13px; margin:8px 0 12px;}
+#ioText{
+  width:100%; min-height:130px;
+  background:#fbf9f3; border:1px solid var(--line); border-radius:10px;
+  color:var(--text); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px; line-height:1.6; padding:10px; resize:vertical;
+  word-break:break-all; -webkit-user-select:text; user-select:text;
+}
+#ioText:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(201,138,20,.16);}
+#ioBtns{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;}
+#ioClose{grid-column:1/-1; background:transparent; border-color:transparent; color:var(--muted); min-height:40px;}
+#ioBtns button.hidden{display:none;}
+
+/* ---------- Toast ---------- */
+#toast{
+  position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 26px); z-index:60;
+  transform:translateX(-50%) translateY(16px);
+  background:#3a352d; border:1px solid #5a5448; color:#fff;
+  padding:10px 18px; border-radius:99px; font-size:14px;
+  opacity:0; transition:.25s; pointer-events:none; white-space:nowrap;
+  box-shadow:0 8px 24px rgba(60,54,42,.4);
+}
+#toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<main class="game-shell">
+  <section class="board-column">
+    <header><h1>牛顿棋 <span>NEWTON CHESS</span></h1></header>
+
+    <div id="scorebar"></div>
+    <div id="statusrow">
+      <span id="statusText">—</span>
+      <span class="bar"><i id="fillBar"></i></span>
+      <span id="fillText">外围 0/0</span>
+    </div>
+
+    <div id="boardWrap">
+      <div id="board">
+        <div id="cells"></div>
+        <div id="marker"></div>
+        <div id="hintMarker" aria-hidden="true"></div>
+        <div id="pieces" class="no-anim"></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="analysis-panel">
+    <div class="analysis-header"><span>棋谱</span><span id="replayPos">— / —</span></div>
+    <div id="controls">
+      <button id="btnHint" class="hintbtn" disabled>AI 指导</button>
+      <button id="btnSettle" class="primary" disabled>结算</button>
+      <button id="btnClear">清空盘面</button>
+    </div>
+    <div id="hintControls">
+      <span id="hintStatus">双人模式下查看当前回合建议</span>
+    </div>
+    <div id="aiProgressRow" aria-live="polite" aria-hidden="true">
+      <span id="aiProgressText"></span>
+      <span class="ai-progress-bar"><i id="aiProgressFill"></i></span>
+    </div>
+    <div id="aiValueRow" aria-live="polite" aria-hidden="true">
+      <span id="aiValueText"></span>
+    </div>
+    <div class="replay-controls">
+      <button id="btnFirst" class="rbtn" disabled aria-label="跳到开局">⏮</button>
+      <button id="btnPrev"  class="rbtn" disabled aria-label="上一手">◀</button>
+      <button id="btnNext"  class="rbtn" disabled aria-label="下一手">▶</button>
+      <button id="btnLast"  class="rbtn" disabled aria-label="跳到末端">⏭</button>
+    </div>
+    <div id="moveTreeScroll" aria-label="走法树"></div>
+    <div id="forkRow" role="group" aria-label="分叉选择"></div>
+  </aside>
+
+  <section class="underboard">
+    <div id="ioControls">
+      <button id="btnExport">导出对局</button>
+      <button id="btnImport">导入对局</button>
+    </div>
+
+    <details class="panel" id="settingsPanel">
+      <summary>对局设置</summary>
+    <div class="pbody">
+      <div class="srow"><span>对战模式</span>
+        <select id="modeSel" class="modesel">
+          <option value="hh">双人对战</option>
+          <option value="ai1">人机 · AI 执后手</option>
+          <option value="ai0">人机 · AI 执先手</option>
+        </select>
+      </div>
+      <div class="srow"><span>玩家数量</span><div class="step" id="stPlayers"></div></div>
+      <div class="srow"><span>棋盘宽度</span><div class="step" id="stW"></div></div>
+      <div class="srow"><span>棋盘高度</span><div class="step" id="stH"></div></div>
+      <div class="srow"><span>AI 搜索 sims</span><input id="simsInput" class="simsinput" type="number" min="8" max="1024" step="1" inputmode="numeric" value="96" aria-label="AI 搜索模拟次数"></div>
+      <div class="srow"><span>音效</span><label class="switch"><input type="checkbox" id="sndChk"><i></i></label></div>
+      <div class="srow"><span>内置模型</span><span id="modelVersionDetail" class="modelver">—</span></div>
+      <button id="btnNew" class="primary wide" style="margin-top:10px;">开始新对局（应用上方设置）</button>
+      <p class="hint">设置仅在新对局时生效，不影响进行中的对局；结算面板里的「再来一局」沿用当前对局的设置。宽高范围 8–19，玩家 2–6 名。对战模式立即生效，人机模式仅支持双人局。AI sims 越高通常越强，但思考时间也越长；搜索过程中会显示实时进度和预计剩余时间。下方 AI value 是价值网络对当前行动方的原始估计：+1 接近胜利，−1 接近失败，0 表示接近均势或不确定。</p>
+    </div>
+  </details>
+
+  <details class="panel">
+    <summary>游戏规则</summary>
+    <div class="pbody">
+      <ol class="rules">
+        <li>玩家轮流把一枚<b>己方棋子</b>落到任意空格，棋子落定后永久留在盘上。</li>
+        <li><b>八向推力</b>：落子瞬间同时向周围八个方向发出推力。</li>
+        <li><b>牛顿摆传递</b>：每个方向上，与落点相邻的连续棋子链中，<b>只有链末端的一枚被推动一格</b>，中间的棋子保持不动（隔山打牛）。链末端之外是空格则移入该格；链末端已贴住棋盘边缘，则该方向什么都不动——<b>棋子永远不会被推出棋盘</b>。</li>
+        <li>刚落下的棋子是力的源头，自身不会被推动。</li>
+        <li>当棋盘<b>最外围一圈被占满</b>时自动结算；也可随时手动结算。结算后仍可悔棋复盘。</li>
+        <li><b>外围少者胜</b>：结算时统计每位玩家在外围一圈上的棋子数，数量最少者获胜，可并列。</li>
+      </ol>
+    </div>
+  </details>
+  </section>
+</main>
+
+<div id="overlay" class="hidden">
+  <div id="resultPanel">
+    <h2 id="ovTitle">对局结算</h2>
+    <div id="ovSub"></div>
+    <div id="rankList"></div>
+    <div id="ovBtns">
+      <button id="ovUndo">悔棋复盘</button>
+      <button id="ovAgain" class="primary">再来一局</button>
+      <button id="ovClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="ioOverlay" class="hidden">
+  <div id="ioPanel">
+    <h2 id="ioTitle">导出对局</h2>
+    <p class="iometa" id="ioMeta"></p>
+    <textarea id="ioText" spellcheck="false"></textarea>
+    <div id="ioBtns">
+      <button id="ioCopy" class="primary">复制代码</button>
+      <button id="ioDo" class="primary hidden">导入并替换当前对局</button>
+      <button id="ioClose">关闭</button>
+    </div>
+    <p class="hint" id="ioHint" style="margin:10px 0 2px;"></p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

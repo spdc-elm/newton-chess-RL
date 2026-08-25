@@ -1,0 +1,33 @@
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  html:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax + JS suite against built HTML
+        run: |
+          set -e
+          node -e '
+          const fs = require("fs");
+          const html = fs.readFileSync("newton-force.html", "utf8");
+          const scripts = html.match(/<script>[\s\S]*?<\/script>/g) || [];
+          if (!scripts.length) process.exit(1);
+          scripts.forEach((s, i) => fs.writeFileSync(".inline" + i + ".js",
+            s.replace(/^<script>/, "").replace(/<\/script>$/, "")));
+          '
+          for f in .inline*.js; do node --check "$f"; done
+          rm -f .inline*.js
+          node test/rules.test.js
+          node test/env.test.js
+          node test/serialization.test.js
+          node test/replay.test.js
+          node test/test_web_forward.js
+          node test/test_mcts_worker.js
+          node test/ai_integration.test.js

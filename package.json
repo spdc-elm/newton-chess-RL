@@ -1,0 +1,9 @@
+{
+  "name": "newton-force",
+  "version": "1.1.0",
+  "private": true,
+  "description": "牛顿棋 NEWTON CHESS — 八向推力 · 牛顿摆传递 · 外围少者胜。离线单文件棋类游戏。",
+  "scripts": {
+    "test": "sh test/run.sh"
+  }
+}
