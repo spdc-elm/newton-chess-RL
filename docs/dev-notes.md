@@ -49,7 +49,7 @@ nf1.<宽>.<高>.<人数>.<状态>.<手数序列>.<校验和>
 ```
 
 - 状态：`p` 进行中 / `b` 外围占满自动结算 / `m` 手动结算
-- 手数序列：每手两个 base36 字符（x、y 各一位），按落子顺序排列
+- 手数序列：每手两个 base36 字符（canonical x、y 各一位），按落子顺序排列；坐标约定见 [rl-interface.md](rl-interface.md#坐标约定)
 - 推动结果由规则确定性决定，因此只记录落点即可完整还原历史；
   导入时逐手重放校验（重复落点、越界等都会被拒绝）
 - 解析前会去除空白并转小写，校验和不匹配则拒绝导入
@@ -73,7 +73,8 @@ newton-force/
 │   ├── helpers/load-game.js   从 HTML 提取内联脚本、DOM 桩沙盒加载真实游戏 API
 │   ├── rules.test.js          规则测试（25）：牛顿摆/边界/八向/悔棋/结算
 │   ├── env.test.js            机器接口测试（24）：掩码/applyMove/undo/观测编码/确定性
-│   ├── serialization.test.js  存档测试（17）：往返/重放一致/篡改检测/容错
+│   ├── serialization.test.js  存档测试（20）：往返/重放一致/篡改检测/容错/nf1 golden
+│   ├── board_geometry.test.js 交点棋盘几何（59）：人类坐标/点击热区/标签/cell class
 │   ├── replay.test.js         复盘树/动画/chrome 场景测试（46）：分支、深层路径、转场事务与 UI 刷新
 │   ├── conformance_*.js/.py   JS↔Python 规则双向一致性（14 局 × 逐步盘面/存档串/观测编码）
 │   └── test_web_forward.js    纯 JS 神经网络前向 vs PyTorch 数值对齐（误差 ~1e-5）

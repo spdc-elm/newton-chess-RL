@@ -89,6 +89,13 @@ eq('垃圾输入被拦截', errOf(api.parseSave('hello world')).length > 0, true
 eq('大写容错', api.parseSave(code1.toUpperCase()).moves, coordsOf(g1));
 eq('换行空格容错', api.parseSave('  ' + code1.split('.').join('.\n  ') + '\n').moves, coordsOf(g1));
 
+/* ---------- nf1 golden：canonical (4,2) 显示为 E3，存档字节不变 ---------- */
+api.newGame(9, 9, 2);
+api.tapCell(4, 2);
+eq('coordName(4,2) 为 E3', api.coordName(4, 2), 'E3');
+eq('parseSave golden moves', api.parseSave('nf1.9.9.2.p.42.1v6osvr').moves, [[4, 2]]);
+eq('serialize (4,2) golden', api.serialize(api.getG()), 'nf1.9.9.2.p.42.1v6osvr');
+
 /* ---------- 空对局往返 ---------- */
 api.newGame(8, 8, 6);
 const parsed0 = api.parseSave(api.serialize(api.getG()));

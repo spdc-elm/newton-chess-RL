@@ -24,6 +24,9 @@ node test/env.test.js
 echo "== 序列化测试 =="
 node test/serialization.test.js
 
+echo "== 棋盘几何 / 坐标测试 =="
+node test/board_geometry.test.js
+
 echo "== 复盘 / 分支测试 =="
 node test/replay.test.js
 

@@ -6,6 +6,7 @@ const NUM   = ['一','二','三','四','五','六'];
 
 const $ = s => document.querySelector(s);
 const boardEl = $('#board'), cellsEl = $('#cells'), piecesEl = $('#pieces'),
+      fileLabelsEl = $('#fileLabels'), rankLabelsEl = $('#rankLabels'),
       markerEl = $('#marker'), hintMarkerEl = $('#hintMarker'), scorebarEl = $('#scorebar'),
       statusTextEl = $('#statusText'), fillBarEl = $('#fillBar'), fillTextEl = $('#fillText'),
       hintBtnEl = $('#btnHint'), hintStatusEl = $('#hintStatus'),
@@ -230,9 +231,36 @@ function armConfirm(btn, fn){
   }, 2300);
 }
 
-/* 人类可读坐标：列 A 起、行自下而上（如 (4,4)@9×9 → E5） */
+/* 人类可读坐标：列 A 起、行从上向下（如 (4,2)@9×9 → E3）。
+ * canonical：(x 左→右, y 上→下)；此处只做纯函数投影，不解析用户输入。 */
+function coordFile(x){
+  return String.fromCharCode(65 + x);
+}
+function coordRank(y){
+  return String(y + 1);
+}
 function coordName(x, y){
-  return String.fromCharCode(65 + x) + (G.h - y);
+  return coordFile(x) + coordRank(y);
+}
+function boardCoordFromClient(clientX, clientY, rect, w, h){
+  const x = Math.min(w - 1, Math.max(
+    0,
+    Math.floor((clientX - rect.left) / rect.width * w)
+  ));
+  const y = Math.min(h - 1, Math.max(
+    0,
+    Math.floor((clientY - rect.top) / rect.height * h)
+  ));
+  return { x, y };
+}
+function setSlotPosition(el, x, y, w, h){
+  el.style.left = 'calc(' + x + ' * 100% / ' + w + ')';
+  el.style.top  = 'calc(' + y + ' * 100% / ' + h + ')';
+}
+function setSlotBox(el, x, y, w, h){
+  setSlotPosition(el, x, y, w, h);
+  el.style.width  = 'calc(100% / ' + w + ')';
+  el.style.height = 'calc(100% / ' + h + ')';
 }
 
 /* ================= 动画事务 =================
@@ -409,7 +437,7 @@ function tapCell(x, y, byAI){
   }
 
   const node = rtAppendMove(tree, cur, x, y);
-  if(!node){ toast('此格已有棋子'); return; }
+  if(!node){ toast('此点已有棋子'); return; }
   transitionTo(node);                           // append 后仍先在 parent/source 完成旧事务
   clearAIHint();                                 // 旧建议随新落子失效
 
@@ -462,19 +490,41 @@ function buildBoardDOM(){
   document.documentElement.style.setProperty('--bw', G.w);
   document.documentElement.style.setProperty('--bh', G.h);
   boardEl.style.aspectRatio = G.w + ' / ' + G.h;
+  if(boardEl.setAttribute)
+    boardEl.setAttribute('aria-label', G.w + ' 乘 ' + G.h + ' 交点棋盘');
   cellsEl.style.gridTemplateColumns = 'repeat(' + G.w + ', 1fr)';
   cellsEl.innerHTML = '';
-  const frag = document.createDocumentFragment();
+  if(fileLabelsEl){
+    fileLabelsEl.style.gridTemplateColumns = 'repeat(' + G.w + ', 1fr)';
+    fileLabelsEl.innerHTML = '';
+    for(let x = 0; x < G.w; x++){
+      const el = document.createElement('span');
+      el.textContent = coordFile(x);
+      fileLabelsEl.appendChild(el);
+    }
+  }
+  if(rankLabelsEl){
+    rankLabelsEl.style.gridTemplateRows = 'repeat(' + G.h + ', 1fr)';
+    rankLabelsEl.innerHTML = '';
+    for(let y = 0; y < G.h; y++){
+      const el = document.createElement('span');
+      el.textContent = coordRank(y);
+      rankLabelsEl.appendChild(el);
+    }
+  }
   for(let y = 0; y < G.h; y++){
     for(let x = 0; x < G.w; x++){
       const c = document.createElement('div');
-      c.className = 'cell'
-        + ((x + y) % 2 ? ' alt' : '')
-        + (isRing(x, y) ? ' ring' : '');
-      frag.appendChild(c);
+      let cls = 'cell';
+      if(x === 0) cls += ' first-col';
+      if(x === G.w - 1) cls += ' last-col';
+      if(y === 0) cls += ' first-row';
+      if(y === G.h - 1) cls += ' last-row';
+      if(isRing(x, y)) cls += ' ring';
+      c.className = cls;
+      cellsEl.appendChild(c);
     }
   }
-  cellsEl.appendChild(frag);
   piecesEl.innerHTML = '';
   pieceEls.clear();
 }
@@ -488,8 +538,7 @@ function makePieceEl(p){
   return el;
 }
 function setPos(el, x, y){
-  el.style.left = 'calc(' + x + ' * 100% / ' + G.w + ')';
-  el.style.top  = 'calc(' + y + ' * 100% / ' + G.h + ')';
+  setSlotPosition(el, x, y, G.w, G.h);
 }
 function renderMarker(){
   const last = G.history[G.history.length - 1];      // marker 永远瞬移，无过渡
@@ -497,10 +546,7 @@ function renderMarker(){
     markerEl.style.display = 'none';
   }else{
     markerEl.style.display = 'block';
-    markerEl.style.width = 'calc(100% / ' + G.w + ')';
-    markerEl.style.height = 'calc(100% / ' + G.h + ')';
-    markerEl.style.left = 'calc(' + last.x + ' * 100% / ' + G.w + ')';
-    markerEl.style.top  = 'calc(' + last.y + ' * 100% / ' + G.h + ')';
+    setSlotBox(markerEl, last.x, last.y, G.w, G.h);
   }
   renderAIHintMarker();
 }
@@ -674,8 +720,7 @@ function navLast (){ const l = rtLast(tree.cursor); if(l !== tree.cursor) gotoNo
 boardEl.addEventListener('click', e => {
   if(!G) return;
   const r = boardEl.getBoundingClientRect();
-  const x = Math.min(G.w - 1, Math.max(0, Math.floor((e.clientX - r.left) / r.width * G.w)));
-  const y = Math.min(G.h - 1, Math.max(0, Math.floor((e.clientY - r.top) / r.height * G.h)));
+  const { x, y } = boardCoordFromClient(e.clientX, e.clientY, r, G.w, G.h);
   tapCell(x, y);
 });
 
@@ -896,10 +941,7 @@ function renderAIHintMarker(){
     return;
   }
   hintMarkerEl.style.display = 'block';
-  hintMarkerEl.style.width = 'calc(100% / ' + G.w + ')';
-  hintMarkerEl.style.height = 'calc(100% / ' + G.h + ')';
-  hintMarkerEl.style.left = 'calc(' + aiHint.x + ' * 100% / ' + G.w + ')';
-  hintMarkerEl.style.top  = 'calc(' + aiHint.y + ' * 100% / ' + G.h + ')';
+  setSlotBox(hintMarkerEl, aiHint.x, aiHint.y, G.w, G.h);
 }
 
 function updateHintUI(){

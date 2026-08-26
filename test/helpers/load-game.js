@@ -104,7 +104,10 @@ function loadGame(){
     'getMoveTreeHTML: () => moveTreeEl.innerHTML,' +
     'getForkHTML: () => forkRowEl.innerHTML,' +
     'getBoardRenderedHeight: () => document.documentElement.style._props["--board-rendered-height"],'+
-    'coordName,' +
+    'coordFile, coordRank, coordName, boardCoordFromClient,' +
+    'getFileLabels: () => [...fileLabelsEl.children].map(el => el.textContent),' +
+    'getRankLabels: () => [...rankLabelsEl.children].map(el => el.textContent),' +
+    'getCellClassNames: () => [...cellsEl.children].map(el => el.className),' +
     'nfCreateState, nfCloneState, nfLegalMask, nfXYToAction, nfActionToXY,' +
     'nfApplyMove, nfUndo, nfIsBorderFull, nfBorderCounts, nfEncodeCanonical,' +
     'rtAppendMove: (parent,x,y) => rtAppendMove(tree,parent,x,y),' +

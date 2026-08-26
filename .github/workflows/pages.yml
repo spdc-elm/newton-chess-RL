@@ -40,6 +40,7 @@ jobs:
           node test/rules.test.js
           node test/env.test.js
           node test/serialization.test.js
+          node test/board_geometry.test.js
           node test/replay.test.js
           node test/test_web_forward.js
           node test/test_mcts_worker.js

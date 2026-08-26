@@ -9,7 +9,7 @@
 <!--
   牛顿棋 NEWTON CHESS — 离线单文件版
   规则要点：
-  · 轮流把己方棋子落到任意空格
+  · 轮流把己方棋子落到任意空点
   · 落子同时向周围 8 个方向发出推力；每个方向上与落点相邻的连续棋子链，
     按牛顿摆规则只有链末端一枚被推动一格（隔山打牛，中间不动）
   · 链末端之外是空格则移入；链末端已贴边则该方向不动；棋子永远不会被推出棋盘
@@ -73,20 +73,104 @@ h1 span{font-size:11px; color:var(--muted); letter-spacing:4px; font-weight:600;
 .bar i{display:block; height:100%; width:0%; background:linear-gradient(90deg,#e6a82e,#d6403f); border-radius:99px; transition:width .35s;}
 #fillText{white-space:nowrap; font-variant-numeric:tabular-nums;}
 
-/* ---------- 棋盘 ---------- */
-#boardWrap{width:min(100%, 560px);}
-#boardWrap{width:max(240px, min(100%, 560px, calc((100dvh - 262px) * (var(--bw) / var(--bh)))));}
+/* ---------- 棋盘（交点式：w×h 个可落子点，棋子圆心在网格交点） ---------- */
+#boardWrap{
+  --coord-gutter:clamp(18px, 3.2vw, 24px);
+  --board-grid-line:rgba(60,54,42,.38);
+  --board-ring-line:rgba(201,138,20,.72);
+  --board-border:2px;
+  width:max(240px, min(100%, 560px, calc((100dvh - 262px) * (var(--bw) / var(--bh)))));
+  display:grid;
+  grid-template-columns:var(--coord-gutter) minmax(0,1fr);
+  grid-template-rows:var(--coord-gutter) auto;
+}
+.coord-corner{
+  grid-column:1;
+  grid-row:1;
+  pointer-events:none;
+  user-select:none;
+}
+#fileLabels,
+#rankLabels{
+  pointer-events:none;
+  user-select:none;
+  -webkit-user-select:none;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.3px;
+  font-variant-numeric:tabular-nums;
+  line-height:1;
+  white-space:nowrap;
+}
+#fileLabels{
+  grid-column:2;
+  grid-row:1;
+  display:grid;
+  align-items:center;
+  justify-items:center;
+  padding-left:var(--board-border);
+  padding-right:var(--board-border);
+}
+#rankLabels{
+  grid-column:1;
+  grid-row:2;
+  display:grid;
+  align-items:center;
+  justify-items:center;
+  padding-top:var(--board-border);
+  padding-bottom:var(--board-border);
+}
 #board{
-  position:relative; width:100%; aspect-ratio:1/1;
-  background:#fbf9f3; border:1px solid #e2dccd; border-radius:12px; overflow:hidden;
+  grid-column:2;
+  grid-row:2;
+  position:relative; width:100%; min-width:0; aspect-ratio:1/1;
+  background:#fbf9f3; border:var(--board-border) solid rgba(43,42,40,.85); border-radius:14px; overflow:hidden;
   box-shadow:0 14px 34px -16px rgba(60,54,42,.3), inset 0 0 46px rgba(60,54,42,.05);
   cursor:pointer;
 }
-#cells{position:absolute; inset:0; display:grid;}
-.cell{border-right:1px solid rgba(60,54,42,.10); border-bottom:1px solid rgba(60,54,42,.10);}
-.cell.alt{background:rgba(60,54,42,.028);}
-.cell.ring{background:rgba(201,138,20,.10);}
-.cell.ring.alt{background:rgba(201,138,20,.14);}
+#cells{position:absolute; inset:0; display:grid; z-index:0;}
+.cell{position:relative;}
+.cell::before{
+  content:'';
+  position:absolute;
+  left:-.5px;
+  right:-.5px;
+  top:50%;
+  height:1px;
+  background:var(--board-grid-line);
+  transform:translateY(-.5px);
+  pointer-events:none;
+  z-index:1;
+}
+.cell::after{
+  content:'';
+  position:absolute;
+  top:-.5px;
+  bottom:-.5px;
+  left:50%;
+  width:1px;
+  background:var(--board-grid-line);
+  transform:translateX(-.5px);
+  pointer-events:none;
+  z-index:1;
+}
+.cell.first-col::before{left:50%;}
+.cell.last-col::before{right:50%;}
+.cell.first-row::after{top:50%;}
+.cell.last-row::after{bottom:50%;}
+.cell.first-row::before,
+.cell.last-row::before{
+  height:2px;
+  background:var(--board-ring-line);
+  transform:translateY(-1px);
+}
+.cell.first-col::after,
+.cell.last-col::after{
+  width:2px;
+  background:var(--board-ring-line);
+  transform:translateX(-1px);
+}
 
 #marker{position:absolute; display:none; z-index:1; pointer-events:none;}
 #marker::before{
@@ -240,6 +324,7 @@ body.replay #board{box-shadow:0 14px 34px -16px rgba(60,54,42,.3), inset 0 0 0 2
   #forkRow{order:7;}
   body{padding-top:26px;}
   h1{font-size:28px;}
+  #boardWrap{--board-border:3px;}
 }
 #hintControls{display:flex; align-items:center; width:min(100%,560px); min-height:24px; padding:0 2px; color:var(--muted); font-size:12px; line-height:1.45;}
 button.hintbtn{color:#fff; background:linear-gradient(180deg,#e6a82e,#c98a14); border-color:#a6710f; white-space:nowrap; box-shadow:0 2px 8px -2px rgba(201,138,20,.45);}
@@ -365,6 +450,10 @@ ol.rules b{color:var(--text);}
     </div>
 
     <div id="boardWrap">
+      <div class="coord-corner" aria-hidden="true"></div>
+      <div id="fileLabels" aria-hidden="true"></div>
+      <div id="rankLabels" aria-hidden="true"></div>
+
       <div id="board">
         <div id="cells"></div>
         <div id="marker"></div>
@@ -433,7 +522,7 @@ ol.rules b{color:var(--text);}
     <summary>游戏规则</summary>
     <div class="pbody">
       <ol class="rules">
-        <li>玩家轮流把一枚<b>己方棋子</b>落到任意空格，棋子落定后永久留在盘上。</li>
+        <li>玩家轮流把一枚<b>己方棋子</b>落到任意空点，棋子落定后永久留在盘上。</li>
         <li><b>八向推力</b>：落子瞬间同时向周围八个方向发出推力。</li>
         <li><b>牛顿摆传递</b>：每个方向上，与落点相邻的连续棋子链中，<b>只有链末端的一枚被推动一格</b>，中间的棋子保持不动（隔山打牛）。链末端之外是空格则移入该格；链末端已贴住棋盘边缘，则该方向什么都不动——<b>棋子永远不会被推出棋盘</b>。</li>
         <li>刚落下的棋子是力的源头，自身不会被推动。</li>
