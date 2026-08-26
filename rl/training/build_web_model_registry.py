@@ -28,12 +28,12 @@ SPECS = [
         "label": "2026-08-26 · Gumbel Full",
         "ckpt": "rl/runs/gumbel_full_hotstart_ramp32_96_9x9_7h/ckpt_iter380.pt",
         "card": {
-            "summary": "昨晚完成的 Full Gumbel AlphaZero 训练模型。",
+            "summary": "Full Gumbel AlphaZero 训练模型。",
             "details": [
                 "训练棋盘：9×9；global iter380",
                 "训练搜索：Gumbel-Top-m + Sequential Halving + completed-Q target",
                 "训练预算：32→96 渐进，最终 96 sims；D4×8；margin-v2 value",
-                "网页搜索：当前使用标准 PUCT Worker",
+                "网页端搜索：标准 PUCT Worker",
             ],
             "caution": "这是 Gumbel 训练模型；浏览器原生 Gumbel 搜索留待后续适配。",
         },
@@ -44,7 +44,7 @@ SPECS = [
         "label": "2026-08-25 · PUCT + opening15",
         "ckpt": "rl/runs/marginv2_lambda4_opening15_d4_9x9_to210/ckpt_iter210.pt",
         "card": {
-            "summary": "上一版网页模型；通过 15 类 D4 不等价首着覆盖改善先手。",
+            "summary": "通过 15 类 D4 不等价首着覆盖改善先手的 PUCT 模型。",
             "details": [
                 "训练棋盘：9×9；global iter210",
                 "训练搜索：标准 sqrt(N_parent) PUCT，96 sims",
@@ -81,7 +81,7 @@ SPECS = [
                 "训练棋盘：9×9；iter210",
                 "历史训练搜索：错误的 sqrt(log N_parent) PUCT",
                 "历史 value：outcome-v1；没有 margin-v2 迁移",
-                "当前网页搜索：标准 PUCT Worker（不是历史 sqrt(log N) Worker）",
+                "网页端搜索：标准 PUCT Worker（不是历史 sqrt(log N) Worker）",
             ],
             "caution": "探索公式已确认错误，仅建议作为历史对照，不作为默认模型。",
         },
