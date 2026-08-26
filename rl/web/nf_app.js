@@ -15,9 +15,10 @@ const boardEl = $('#board'), cellsEl = $('#cells'), piecesEl = $('#pieces'),
       overlayEl = $('#overlay'), toastEl = $('#toast'),
       moveTreeEl = $('#moveTreeScroll'), forkRowEl = $('#forkRow'), replayPosEl = $('#replayPos'),
       btnFirstEl = $('#btnFirst'), btnPrevEl = $('#btnPrev'),
-      btnNextEl = $('#btnNext'), btnLastEl = $('#btnLast');
+      btnNextEl = $('#btnNext'), btnLastEl = $('#btnLast'),
+      modelSelectEl = $('#modelSelect'), modelCardEl = $('#modelCard');
 
-let cfg = { w:9, h:9, players:2, sound:true, aiSims:96 };   // 待应用设置（新对局生效）
+let cfg = { w:9, h:9, players:2, sound:true, aiSims:96, modelId:null };   // 待应用设置（新对局生效）
 let tree = null;                                  // 复盘树（结构见 nf_replay.js）
 let G = null;                                     // 恒等于 tree.cursor.state（唯一 canonical 状态）
 const pieceEls = new Map();                       // 稳定 pieceId -> DOM
@@ -203,6 +204,7 @@ function loadCfg(){
       cfg.players = Math.min(6, Math.max(2, cfg.players | 0));
       cfg.sound = !!cfg.sound;
       cfg.aiSims = Math.min(1024, Math.max(8, Math.round(Number(cfg.aiSims) || 96)));
+      if(cfg.modelId != null) cfg.modelId = String(cfg.modelId);
     }
   }catch(e){}
 }
@@ -1072,7 +1074,13 @@ function handleAIWorkerMessage(event){
 }
 
 function initAIWorker(){
-  if(aiWorker || !window.NF_MCTS_WORKER_SOURCE || !window.NF_WEB_MODEL) return;
+  if(!window.NF_MCTS_WORKER_SOURCE || !window.NF_WEB_MODEL) return;
+  if(aiWorker){
+    aiWorkerReady = false;
+    try{ aiWorker.postMessage({ type: 'init', model: window.NF_WEB_MODEL }); }
+    catch(e){ console.error('NF MCTS Worker model init:', e); }
+    return;
+  }
   const WorkerCtor = window.Worker || (typeof Worker !== 'undefined' ? Worker : null);
   const BlobCtor = window.Blob || (typeof Blob !== 'undefined' ? Blob : null);
   const URLCtor = window.URL || (typeof URL !== 'undefined' ? URL : null);
@@ -1205,30 +1213,144 @@ function maybeAIMove(){
   }, 300);   // 先渲染「AI 思考中」，再把 PUCT 放入 Worker
 }
 
+function webModelEntries(){
+  const registry = window.NF_WEB_MODEL_REGISTRY;
+  if(registry && Array.isArray(registry.models))
+    return registry.models.filter(m => m && m.meta && m.arch && m.tensors);
+  return window.NF_WEB_MODEL ? [window.NF_WEB_MODEL] : [];
+}
+function webModelLabel(model){
+  const meta = model && model.meta || {};
+  return meta.label || meta.version || meta.id || '未命名模型';
+}
+function webModelById(id){
+  const entries = webModelEntries();
+  for(const model of entries){
+    if(model.meta && model.meta.id === id) return model;
+  }
+  return entries[0] || null;
+}
+function populateModelSelect(selectedId){
+  if(!modelSelectEl) return;
+  const entries = webModelEntries();
+  modelSelectEl.innerHTML = '';
+  for(const model of entries){
+    const option = document.createElement('option');
+    option.value = model.meta.id || model.meta.version || '';
+    option.textContent = webModelLabel(model);
+    modelSelectEl.appendChild(option);
+  }
+  const fallback = entries.length ? (entries[0].meta.id || entries[0].meta.version || '') : '';
+  modelSelectEl.value = entries.some(m => (m.meta.id || m.meta.version || '') === selectedId)
+    ? selectedId : fallback;
+}
+function renderModelCard(){
+  if(!modelCardEl) return;
+  const model = window.NF_WEB_MODEL;
+  const meta = model && model.meta;
+  modelCardEl.innerHTML = '';
+  if(!meta){ modelCardEl.classList.remove('show'); return; }
+  const card = meta.card || {};
+  const title = document.createElement('strong');
+  title.className = 'model-card-title';
+  title.textContent = webModelLabel(model);
+  modelCardEl.appendChild(title);
+  if(card.summary){
+    const summary = document.createElement('div');
+    summary.className = 'model-card-summary';
+    summary.textContent = card.summary;
+    modelCardEl.appendChild(summary);
+  }
+  if(Array.isArray(card.details) && card.details.length){
+    const list = document.createElement('ul');
+    list.className = 'model-card-details';
+    for(const detail of card.details){
+      const item = document.createElement('li');
+      item.textContent = String(detail);
+      list.appendChild(item);
+    }
+    modelCardEl.appendChild(list);
+  }
+  if(card.caution){
+    const caution = document.createElement('div');
+    caution.className = 'model-card-caution';
+    caution.textContent = '注意：' + card.caution;
+    modelCardEl.appendChild(caution);
+  }
+  modelCardEl.classList.add('show');
+}
 function renderModelVersion(){
   const el = $('#modelVersionDetail');
-  if(!el) return;
   const meta = window.NF_WEB_MODEL && window.NF_WEB_MODEL.meta;
-  if(!meta){ el.textContent = '未内置'; return; }
-  const ver = meta.version || (meta.iter != null ? ('iter' + meta.iter) : 'unknown');
-  const bits = [ver];
-  if(meta.trained_size) bits.push(meta.trained_size + '×' + meta.trained_size);
-  if(meta.value_target) bits.push(meta.value_target);
-  el.textContent = bits.join(' · ');
-  el.title = [meta.source, meta.exported_at].filter(Boolean).join(' · ');
+  if(el){
+    el.textContent = meta ? webModelLabel(window.NF_WEB_MODEL) : '未内置';
+    el.title = meta ? [meta.id, meta.source, meta.trained_at, meta.exported_at].filter(Boolean).join(' · ') : '';
+  }
+  renderModelCard();
+}
+function cancelAISearchForModel(){
+  ++aiSearchId;
+  if(aiSearchPending){
+    const pending = aiSearchPending;
+    aiSearchPending = null;
+    pending.done(null, { cancelled: true });
+  }
+  aiHintToken++;
+  aiHintBusy = false;
+  aiHint = null;
+  aiValue = null;
+  clearAIProgress();
+  renderAIHintMarker();
+}
+function selectWebModel(id, quiet){
+  const model = webModelById(id);
+  if(!model){
+    aiModel = null;
+    renderModelVersion();
+    return false;
+  }
+  const meta = model.meta || {};
+  const oldId = window.NF_WEB_MODEL && window.NF_WEB_MODEL.meta && window.NF_WEB_MODEL.meta.id;
+  if(oldId !== meta.id) cancelAISearchForModel();
+  try{
+    window.NF_WEB_MODEL = model;
+    aiModel = window.NFForward && typeof window.NFForward === 'object'
+      ? window.NFForward.loadModel(model) : null;
+  }catch(e){
+    console.error('模型加载失败:', e);
+    aiModel = null;
+  }
+  cfg.modelId = meta.id || meta.version || null;
+  saveCfg();
+  populateModelSelect(cfg.modelId);
+  renderModelVersion();
+  updateAIValue();
+  if(aiWorker){
+    aiWorkerReady = false;
+    try{ aiWorker.postMessage({ type: 'init', model }); }
+    catch(e){ console.error('Worker 模型切换失败:', e); }
+  }else{
+    initAIWorker();
+  }
+  if(!quiet && meta.label) toast('已切换模型：' + meta.label);
+  return !!aiModel;
 }
 function loadAIModel(){
-  try{
-    /* NFForward 由 UMD 包裹器挂在 window/self 上；显式走 window 保证跨环境可寻址 */
-    if(window.NF_WEB_MODEL && typeof window.NFForward === 'object'){
-      aiModel = window.NFForward.loadModel(window.NF_WEB_MODEL);
-      initAIWorker();
-    }
-  }catch(e){ console.error(e); aiModel = null; }
-  renderModelVersion();
+  const entries = webModelEntries();
+  if(!entries.length){ renderModelVersion(); return; }
+  const registry = window.NF_WEB_MODEL_REGISTRY || {};
+  const current = window.NF_WEB_MODEL && window.NF_WEB_MODEL.meta;
+  const defaultId = registry.default_id || (current && (current.id || current.version));
+  populateModelSelect(cfg.modelId || defaultId);
+  selectWebModel(modelSelectEl && modelSelectEl.value || cfg.modelId || defaultId, true);
 }
 
 const modeSel = $('#modeSel');
+if(modelSelectEl){
+  modelSelectEl.addEventListener('change', () => {
+    selectWebModel(modelSelectEl.value, false);
+  });
+}
 function applyAIMode(){
   clearAIHint();
   const v = modeSel.value;

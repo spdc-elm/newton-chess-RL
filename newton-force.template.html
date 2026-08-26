@@ -281,6 +281,13 @@ ol.rules b{color:var(--text);}
 .switch input:checked + i{background:rgba(201,138,20,.28); border-color:#c9a85a;}
 .switch input:checked + i::after{transform:translateX(19px); background:var(--accent);}
 .modesel{font:inherit; font-size:14px; color:var(--text); background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 10px;}
+#modelSelect{max-width:68%;}
+.model-card{display:none; margin:8px 0 2px; padding:10px 11px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; color:#5a564f; font-size:12px; line-height:1.55;}
+.model-card.show{display:block;}
+.model-card-title{display:block; color:var(--text); font-size:13px; margin-bottom:3px;}
+.model-card-summary{color:var(--muted);}
+.model-card-details{margin:5px 0 0; padding-left:18px;}
+.model-card-caution{margin-top:6px; color:#9c4d14; font-size:11px;}
 .simsinput{width:108px; box-sizing:border-box; font:inherit; font-size:14px; color:var(--text); background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 10px; text-align:center; font-variant-numeric:tabular-nums;}
 .aitag{font-style:normal; color:var(--accent); font-size:10px; font-weight:800; margin-left:2px; vertical-align:1px;}
 
@@ -415,7 +422,8 @@ ol.rules b{color:var(--text);}
       <div class="srow"><span>棋盘高度</span><div class="step" id="stH"></div></div>
       <div class="srow"><span>AI 搜索 sims</span><input id="simsInput" class="simsinput" type="number" min="8" max="1024" step="1" inputmode="numeric" value="96" aria-label="AI 搜索模拟次数"></div>
       <div class="srow"><span>音效</span><label class="switch"><input type="checkbox" id="sndChk"><i></i></label></div>
-      <div class="srow"><span>内置模型</span><span id="modelVersionDetail" class="modelver">—</span></div>
+      <div class="srow"><span>内置模型</span><select id="modelSelect" class="modesel" aria-label="选择内置模型"></select></div>
+      <div id="modelCard" class="model-card" aria-live="polite"></div>
       <button id="btnNew" class="primary wide" style="margin-top:10px;">开始新对局（应用上方设置）</button>
       <p class="hint">设置仅在新对局时生效，不影响进行中的对局；结算面板里的「再来一局」沿用当前对局的设置。宽高范围 8–19，玩家 2–6 名。对战模式立即生效，人机模式仅支持双人局。AI sims 越高通常越强，但思考时间也越长；搜索过程中会显示实时进度和预计剩余时间。下方 AI value 是价值网络对当前行动方的原始估计：+1 接近胜利，−1 接近失败，0 表示接近均势或不确定。</p>
     </div>

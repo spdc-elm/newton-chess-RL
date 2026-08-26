@@ -74,7 +74,7 @@ st = {
 - **动机**：线下实际计分按分差进行，分差本身就是优化目标，并天然推广到多人
   （按最终名次差给分）；同时解决二元标签下「输 1 枚和输 8 枚无区别」的信用分配问题，
   缓解先手大量败局的「摆烂」。
-- **policy 目标不变**：MCTS 根节点访问分布 `π`。
+- **policy 目标**：传统 PUCT 样本使用 MCTS 根节点访问分布 `π`；Gumbel AlphaZero 样本使用 completed-Q policy improvement target `π′ = softmax(logits + σ(completedQ))`，未访问动作的 Q 由网络根 value 补全。两者都保持 `[H*W]` 合法动作分布契约。
 - **loss**：`L = CE(π, p) + λ·MSE(v, m)`。当前 pilot 基线 `λ=1`；λ 只影响训练时
   共享主干的梯度，不改变 MCTS 的分差目标。搜索叶子直接使用 `v`（归一化分差），
   二人局换边取反、终局用真实 `m`。
@@ -98,32 +98,62 @@ st = {
   作为棋力指标。对局先后手各半，使用温度采样，报告最终外围分差及分色结果；
   random/greedy 只用于规则冒烟或历史记录。
 - **性能基线**：当前 profiling 显示自博弈约九成时间在 CPU batch=1 网络叶子推理，
-  不是规则推进；`NNBot` 已对 CPU 推理启用 `inference_mode + channels_last`，不改网络结构、
-  PUCT 公式或训练目标。更大的 GPU 批量叶子评估属于后续架构优化。
+  不是规则推进；`NNBot` 已对 CPU 推理启用 `inference_mode + channels_last`，并支持在真实落子后
+  将已展开 child 复用为下一根（缺失 child 自动退回冷树）。更大的 GPU 批量叶子评估属于后续架构优化。
 - **当前状态**：分差回传、value 迁移、D4×8、样本持久化、λ 参数化、CPU channels_last 与开局覆盖已经实现；
   开局覆盖版已完成 global iter60→210，先手 arena 有改善但仍明显弱，网页仍部署旧 value 语义模型。
 
-## Web 模型版本
+## Gumbel AlphaZero 训练路线（2026-08-25）
 
-网页内置模型是 `rl/web/nf_model.json`。`meta` 必须带公开版本号，换模型时先改这里再构建 HTML。
+`rl/bots/nn_bot.py` 在保留旧 PUCT 默认行为的同时支持完整 Gumbel 路线：
 
-| 字段 | 含义 |
-|---|---|
-| `version` | 对外版本，默认 `YYYY.MM.DD-iterN`，也可用 `--version` 指定 |
-| `source` | 导出时 checkpoint 所在 run 目录名 |
-| `iter` / `trained_size` / `params` | 训练迭代、主训练尺寸、参数量 |
-| `value_target` / `augmentation` | 价值语义与数据增强 |
-| `exported_at` | 导出时间 |
+1. 根节点从合法动作的 `logits + Gumbel(0,1)` 中无放回取 Top-m（默认 `m=min(sims,16)`）；
+2. 用 Sequential Halving 在候选根动作间分配 `sims` 次模拟，最后用同一组 Gumbel 值选择动作；
+3. 用 `completedQ(a)=Q(a)`（访问过）或根 value（未访问）构造
+   `π′=softmax(logits+σ(completedQ))`，作为 policy head 的监督；
+4. `full_gumbel=True` 时，非根节点按 `argmax_a [π′(a)-N(a)/(1+ΣN)]` 确定性选择；
+5. 每次真实落子后调用 `advance_root(action)` 可复用已展开 child 的统计；若该动作没有 child，
+   实现会清缓存并安全地从新根搜索，不改变结果正确性；
+6. Gumbel 模式关闭 Dirichlet 与 opening coverage。训练时根噪声开启；完全信息游戏的确定性评测可令 Gumbel noise=0，再单独报告 temperature 协议。
 
-换模型流程：
+命令行入口：
 
 ```sh
-python3 rl/training/export_web_model.py --ckpt <run>/latest.pt
+python3 -u rl/training/train.py --gumbel --init <checkpoint> \
+  --gumbel-max-actions 16 --gumbel-c-visit 50 --gumbel-c-scale 1
+```
+
+`--sims-start N --sims-ramp-iters K --sims M` 可把预算从 N 线性升到 M；
+`rl/evaluate_gumbel.py` 固定 anchor 做 `det`、`early12`、`all1` 三种协议的分色 arena、自战与空棋盘 value 校准。
+
+
+网页默认模型与可选模型分别由以下文件提供：
+
+- `rl/web/nf_model.json`：默认模型，兼容现有单模型工具与前向测试；
+- `rl/web/nf_models.json`：四个内置模型的完整 registry，供设置面板的模型选择器与 model card 使用。
+
+每个模型的 `meta` 包含稳定 `id`、面向用户的日期 `version`/`label`、来源、训练语义和卡片说明。选择器只显示日期和模型家族，不把 `9×9 / iter210` 这类内部细节塞进名称；详细技术说明放在对局设置中的 model card。
+
+当前 registry 的四个模型：
+
+| 日期标签 | 稳定 ID | 角色 |
+|---|---|---|
+| `2026-08-26 · Gumbel Full` | `gumbel-full-9x9-i380` | 新模型；Gumbel 训练，网页暂用 PUCT 搜索 |
+| `2026-08-25 · PUCT + opening15` | `puct-opening15-9x9-i210` | 先手改善版 |
+| `2026-08-24 · Corrected PUCT` | `puct-corrected-9x9-i210` | opening15 前的严重失衡版 |
+| `2026-08-23 · Stage A（历史）` | `stageA-sqrtlog-9x9-i210` | 旧 `sqrt(log N)` 错误公式对照版 |
+
+模型选择只更换网络权重；当前浏览器 Worker 对所有版本统一使用标准 PUCT。Gumbel 原生浏览器搜索属于后续工作。
+
+模型 registry 构建命令：
+
+```sh
+python3 rl/training/build_web_model_registry.py
 python3 tools/build_html.py
 sh test/run.sh
 ```
 
-构建脚本会把 `meta` 写进 `newton-force.html` 的 `<!-- NF_MODEL ... -->` 注释；页面「对局设置 → 内置模型」读取同一个 `meta`。不要手改 HTML 里的版本字串。生成的 `newton-force.html` 不进 Git，由 CI 构建并发布到 Pages。
+单模型导出工具 `export_web_model.py` 仍保留，用于临时导出和前向验证。构建脚本会把默认模型、完整 registry、前向和 Worker 一起内联进 `newton-force.html`。页面「对局设置 → 内置模型」读取日期标签和 model card。不要手改 HTML；生成的 `newton-force.html` 不进 Git，由 `.github/workflows/pages.yml` 在 push 到 `main` 后构建、测试并发布到 GitHub Pages。
 
 ## 模型接入契约
 
@@ -151,7 +181,8 @@ sh test/run.sh
 
 ## 当前部署状态
 
-- 内置模型版本：`2026.08.25-iter210`
-- 来源：`marginv2_lambda4_opening15_d4_9x9_to210@iter210`（λ=4、D4×8、15 类首着覆盖，4×64、301,442 参数）。
-- value 语义：当前行动方视角的归一化外围分差 `m`，不是旧版胜负倾向。
-- 更新方式：见上文「Web 模型版本」。
+- 默认内置模型：`2026-08-26 · Gumbel Full`（`gumbel-full-9x9-i380`）；
+- registry 还包含 opening15 先手改善版、Corrected PUCT 严重失衡版、Stage A `sqrt(log N)` 历史错误公式版；
+- value 语义：新 Gumbel/opening15 为当前行动方视角的归一化外围分差 `m`；两个历史模型为旧 outcome-v1，model card 会明确提示；
+- 网页搜索：四个模型暂时统一使用当前标准 PUCT Worker；
+- HTML：由 `.github/workflows/pages.yml` 在 `main` 分支 CI 中构建和部署。

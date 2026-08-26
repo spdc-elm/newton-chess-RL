@@ -96,6 +96,17 @@ def test_value_head_reset_is_neutral():
     print("✓ v1→v2 迁移只重置 value 头，初始输出严格为 0")
 
 
+def test_policy_head_reset_is_local():
+    torch.manual_seed(8)
+    net = NFNet(3, 16, 1).eval()
+    preserved = {k: v.clone() for k, v in net.state_dict().items()
+                 if not k.startswith("policy.")}
+    net.reset_policy_head()
+    for k, v in preserved.items():
+        assert torch.equal(v, net.state_dict()[k]), k
+    print("✓ policy head 消融只重置 policy 参数")
+
+
 def test_cpu_channels_last_parity():
     torch.manual_seed(9)
     net = NFNet(3, 16, 1).eval()
@@ -118,5 +129,6 @@ if __name__ == "__main__":
     test_all_eight_d4_transforms_align_policy()
     test_d4_batch_is_exactly_eightfold()
     test_value_head_reset_is_neutral()
+    test_policy_head_reset_is_local()
     test_cpu_channels_last_parity()
     print("全部通过")

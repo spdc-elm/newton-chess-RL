@@ -45,6 +45,10 @@ class NFNet(nn.Module):
         )
         self.apply(self._init)
 
+    def reset_policy_head(self):
+        """保留 trunk/value，仅重置 policy 头用于 Gumbel 路径依赖消融。"""
+        self.policy.apply(self._init)
+
     def reset_value_head(self, zero_output=True):
         """切换 value 语义时重置 value 头；可令初始输出严格为 0。"""
         self.value.apply(self._init)

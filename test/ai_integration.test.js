@@ -44,8 +44,13 @@ function makeEl(){
 const sandboxWindow = {};
 globalThis.self = sandboxWindow;          // 浏览器中 self === window，沙盒保持一致
 const modeEl = makeEl();
+const modelEl = makeEl();
 const documentStub = {
-  querySelector(sel){ return sel === '#modeSel' ? modeEl : makeEl(); },
+  querySelector(sel){
+    if(sel === '#modeSel') return modeEl;
+    if(sel === '#modelSelect') return modelEl;
+    return makeEl();
+  },
   addEventListener(){},
   createElement(){ return makeEl(); },
   createDocumentFragment(){ return { appendChild(){} }; },
@@ -76,6 +81,13 @@ const api = factory(
   T('页面启动无异常且已开局', !!api.getG() && api.getG().history.length === 0);
   T('window.NF_WEB_MODEL 已注入且含权重',
     typeof sandboxWindow.NF_WEB_MODEL === 'object' && Object.keys(sandboxWindow.NF_WEB_MODEL.tensors || {}).length > 10);
+  T('内置模型 registry 含四个可选版本',
+    sandboxWindow.NF_WEB_MODEL_REGISTRY && sandboxWindow.NF_WEB_MODEL_REGISTRY.models.length === 4);
+  if(sandboxWindow.NF_WEB_MODEL_REGISTRY && sandboxWindow.NF_WEB_MODEL_REGISTRY.models.length >= 2){
+    modelEl.value = sandboxWindow.NF_WEB_MODEL_REGISTRY.models[1].meta.id;
+    modelEl._fire('change');
+    T('可切换到第二个内置模型', sandboxWindow.NF_WEB_MODEL.meta.id === modelEl.value);
+  }
   T('当前局面已生成 value 评估', !!api.getAIValue() && Number.isFinite(api.getAIValue().value) && api.getAIValue().player === api.getG().cur);
 
   /* 模拟选择「AI 执后手」 */

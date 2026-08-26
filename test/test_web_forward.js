@@ -30,3 +30,19 @@ for(const c of vecs.cases){
 console.log('\n最大误差 %s（容差 %s）· %d/%d 通过', maxErr.toExponential(2), vecs.tolerance.toExponential(0), pass, vecs.cases.length);
 if(pass !== vecs.cases.length) process.exit(1);
 console.log('跨端前向验证通过 ✓');
+
+const registryPath = path.join(ROOT, 'rl', 'web', 'nf_models.json');
+if(fs.existsSync(registryPath)){
+  const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+  let registryPass = 0;
+  const probe = vecs.cases[0];
+  for(const entry of registry.models || []){
+    const loaded = NFForward.loadModel(entry);
+    const out = NFForward.forward(loaded, new Float32Array(probe.obs), probe.h, probe.w);
+    const finite = Number.isFinite(out.value) && out.logits.length === probe.w * probe.h &&
+      Array.from(out.logits).every(Number.isFinite);
+    if(!finite) throw new Error('registry 模型前向无效: ' + (entry.meta && entry.meta.id));
+    registryPass++;
+  }
+  console.log('registry 模型加载/前向通过 ✓ · %d/%d', registryPass, (registry.models || []).length);
+}

@@ -66,6 +66,26 @@ def parse_args():
                     help="关闭训练脚本内置的 random/greedy 快速评测；正式评测另跑 checkpoint arena")
     ap.add_argument("--opening-coverage", action="store_true",
                     help="按 D4 不等价首着循环覆盖开局（9×9 为 15 类）")
+    ap.add_argument("--gumbel", action="store_true",
+                    help="启用完整 Gumbel AlphaZero 根搜索与 completed-Q policy target")
+    ap.add_argument("--gumbel-max-actions", type=int, default=16,
+                    help="Gumbel 根节点无放回候选数 m（默认 min(sims,16)）")
+    ap.add_argument("--gumbel-c-visit", type=float, default=50.0,
+                    help="sigma(Q) 的 c_visit 缩放（论文 Go 默认 50）")
+    ap.add_argument("--gumbel-c-scale", type=float, default=1.0,
+                    help="sigma(Q) 的 c_scale 缩放（论文 Go 默认 1）")
+    ap.add_argument("--no-full-gumbel", action="store_true",
+                    help="仅替换 Gumbel 根；非根节点保留 PUCT（消融用）")
+    ap.add_argument("--no-gumbel-noise", action="store_true",
+                    help="关闭根 Gumbel 噪声（确定性诊断，不建议训练主线）")
+    ap.add_argument("--sims-start", type=int, default=None,
+                    help="渐进预算起点；与 --sims-ramp-iters 配合线性升至 --sims")
+    ap.add_argument("--sims-ramp-iters", type=int, default=0,
+                    help="从 sims-start 升到 sims 所需的全局迭代数，0 表示固定预算")
+    ap.add_argument("--reset-policy-head", action="store_true",
+                    help="热启动时只重置 policy 头（trunk/value 保留，消融用）")
+    ap.add_argument("--no-tree-reuse", action="store_true",
+                    help="关闭每步将已搜索 child 复用为下一根节点（Gumbel 默认开启）")
     ap.add_argument("--seed", type=int, default=0)
     return ap.parse_args()
 
@@ -89,6 +109,18 @@ def save_selfplay_samples(out_dir, iteration, samples):
         value=np.asarray([b[2] for b in samples], dtype=np.float32),
     )
     return path
+
+
+def sims_for_iter(args, iteration):
+    """返回当前全局迭代的搜索预算；默认固定 args.sims。"""
+    if args.sims_start is None or args.sims_ramp_iters <= 0:
+        return max(0, int(args.sims))
+    start = max(0, int(args.sims_start))
+    end = max(0, int(args.sims))
+    if args.sims_ramp_iters <= 1:
+        return end
+    alpha = min(1.0, max(0.0, (iteration - 1) / float(args.sims_ramp_iters - 1)))
+    return int(round(start + alpha * (end - start)))
 
 
 def train_epochs(net, buffer_, opt, device, epochs, batch, d4=True, value_loss_weight=1.0):
@@ -141,7 +173,14 @@ def quick_eval(net, cfg, device, games, sims, seed=123):
     eval_net = copy.deepcopy(net).to("cpu").eval()
     results = {}
     for opp_name, opp in (("random", RandomBot(seed + 1)), ("greedy", GreedyBot(seed + 2))):
-        bot = NNBot(eval_net, device="cpu", sims=sims, c_puct=1.5, seed=seed)
+        bot = NNBot(eval_net, device="cpu", sims=sims, c_puct=cfg.get("c_puct", 1.5),
+                    seed=seed, gumbel=cfg.get("gumbel", False),
+                    gumbel_max_actions=cfg.get("gumbel_max_actions", 16),
+                    gumbel_c_visit=cfg.get("gumbel_c_visit", 50.0),
+                    gumbel_c_scale=cfg.get("gumbel_c_scale", 1.0),
+                    full_gumbel=cfg.get("full_gumbel", True),
+                    reuse_tree=cfg.get("reuse_tree", False),
+                    gumbel_noise=False)
         agg = {"as_first": [0, 0, 0], "as_second": [0, 0, 0]}   # W/L/D
         for g in range(games):
             s = env.create(cfg["w"], cfg["h"], cfg["n"])
@@ -154,6 +193,7 @@ def quick_eval(net, cfg, device, games, sims, seed=123):
                 x, y = bot.select_move(s) if mover_is_nn else opp.select_move(s)
                 rec, err = env.apply_move(s, x, y)
                 assert rec is not None, err
+                bot.advance_root(y * s.w + x)
             counts = env.border_counts(s)
             nn_border = counts[0] if first_nn else counts[1]
             opp_border = counts[1] if first_nn else counts[0]
@@ -183,10 +223,23 @@ def main():
     cfg = {
         "w": args.size, "h": args.size, "n": 2,
         "sims": args.sims, "c_puct": 1.5,
-        "dirichlet_eps": 0.25, "dirichlet_alpha": 0.2,
+        # Gumbel 的根探索已替代 Dirichlet；即使命令误传
+        # --opening-coverage，也不把强制首着混进主线。
+        "dirichlet_eps": 0.0 if args.gumbel else 0.25,
+        "dirichlet_alpha": 0.2,
         "temp_moves": args.temp_moves,
-        "opening_actions": opening_orbit_representatives(args.size) if args.opening_coverage else [],
+        "opening_actions": (opening_orbit_representatives(args.size)
+                             if args.opening_coverage and not args.gumbel else []),
+        "gumbel": args.gumbel,
+        "gumbel_max_actions": args.gumbel_max_actions,
+        "gumbel_c_visit": args.gumbel_c_visit,
+        "gumbel_c_scale": args.gumbel_c_scale,
+        "full_gumbel": not args.no_full_gumbel,
+        "gumbel_noise": not args.no_gumbel_noise,
+        "reuse_tree": args.gumbel and not args.no_tree_reuse,
     }
+    if args.gumbel and args.opening_coverage:
+        print("提示：Gumbel 主线自动关闭 opening coverage（不强制 15 类首着）")
     net = NFNet(planes_in=3, channels=args.channels, blocks=args.blocks).to(device)
     if args.init:
         ck = torch.load(args.init, map_location="cpu", weights_only=False)
@@ -196,9 +249,17 @@ def main():
             # policy/trunk 热启动；旧胜负 value 语义不兼容，清零重训。
             net.reset_value_head(zero_output=True)
             print("value 语义迁移:", source_target, "→", VALUE_TARGET, "（value 头已重置为 0）")
+        if args.reset_policy_head:
+            net.reset_policy_head()
+            print("policy 头已重置；trunk/value 保留")
         print("热启动自:", args.init, "(iter", str(ck.get("iter")) + ")")
     print("参数量:", net.num_params(), "· 训练设备:", device, "· value:", VALUE_TARGET,
+          "· search:", "Full Gumbel" if args.gumbel and not args.no_full_gumbel
+          else ("Gumbel root" if args.gumbel else "PUCT"),
+          "· Gumbel m:", args.gumbel_max_actions if args.gumbel else "—",
           "· D4:", "关闭" if args.no_d4 else "8×",
+          "· Dirichlet:", "关闭" if args.gumbel else "开启",
+          "· tree reuse:", "开启" if cfg["reuse_tree"] else "关闭",
           "· 开局覆盖:", len(cfg["opening_actions"]) or "关闭", "· 输出目录:", out_dir)
 
     opt = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -208,6 +269,8 @@ def main():
 
     for it in range(args.start_iter + 1, args.iters + 1):
         t0 = time.time()
+        current_sims = sims_for_iter(args, it - args.start_iter)
+        cfg["sims"] = current_sims
         # ---- 自博弈 ----
         state_dict = {k: v.detach().cpu() for k, v in net.state_dict().items()}
         seeds = [rng.randrange(1 << 30) for _ in range(args.games_per_iter)]
@@ -247,7 +310,8 @@ def main():
         if not args.no_quick_eval and (it % args.eval_every == 0 or it == args.iters):
             ev = quick_eval(net, cfg, device, args.eval_games, args.eval_sims)
         rec = {
-            "iter": it, "games": args.games_per_iter, "samples": len(samples),
+            "iter": it, "games": args.games_per_iter, "sims": current_sims,
+            "samples": len(samples),
             "selfplay_s": round(t_selfplay, 1), "train_s": round(t_train, 1),
             "buffer": len(buffer_),
             "policy_loss": round(tstats["policy_loss"], 4),
@@ -255,6 +319,13 @@ def main():
             "value_loss_weight": args.value_loss_weight,
             "value_target": VALUE_TARGET,
             "d4": not args.no_d4,
+            "gumbel": cfg["gumbel"],
+            "full_gumbel": cfg["full_gumbel"],
+            "gumbel_max_actions": cfg["gumbel_max_actions"] if cfg["gumbel"] else None,
+            "gumbel_c_visit": cfg["gumbel_c_visit"] if cfg["gumbel"] else None,
+            "gumbel_c_scale": cfg["gumbel_c_scale"] if cfg["gumbel"] else None,
+            "gumbel_noise": cfg["gumbel_noise"] if cfg["gumbel"] else None,
+            "reuse_tree": cfg["reuse_tree"],
             "opening_coverage": cfg["opening_actions"],
             "train_examples": tstats["train_examples"],
             "selfplay_file": os.path.relpath(sample_path, ROOT) if sample_path else None,
@@ -267,12 +338,13 @@ def main():
                       "value_loss_weight": args.value_loss_weight,
                       "value_target": VALUE_TARGET,
                       "augmentation": "d4x8" if not args.no_d4 else "none",
-                      "opening_coverage": cfg["opening_actions"]}
+                      "opening_coverage": cfg["opening_actions"],
+                      "search": dict(cfg)}
         torch.save(checkpoint, os.path.join(out_dir, "latest.pt"))
         if it % max(1, args.iters // 6) == 0 or it == args.iters:
             torch.save(checkpoint, os.path.join(out_dir, "ckpt_iter%03d.pt" % it))
-        print("iter %3d/%d · %d 基础样本/%d 训练样本 · 自博弈 %.0fs · 训练 %.0fs · π_loss %.3f · margin_loss %.3f%s"
-              % (it, args.iters, len(samples), tstats["train_examples"], t_selfplay, t_train,
+        print("iter %3d/%d · sims %d · %d 基础样本/%d 训练样本 · 自博弈 %.0fs · 训练 %.0fs · π_loss %.3f · margin_loss %.3f%s"
+              % (it, args.iters, current_sims, len(samples), tstats["train_examples"], t_selfplay, t_train,
                  tstats["policy_loss"], tstats["value_loss"],
                  (" · eval " + json.dumps(ev, ensure_ascii=False)) if ev else ""), flush=True)
 

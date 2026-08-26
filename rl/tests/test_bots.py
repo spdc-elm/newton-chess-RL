@@ -12,11 +12,15 @@ import math
 import os
 import sys
 
+import numpy as np
+import torch
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "rl"))
 import nf_env as env
 from bots.greedy_bot import GreedyBot
 from bots.mcts_bot import MCTSBot
-from bots.nn_bot import _puct_score
+from bots.nn_bot import NNBot, _puct_score
+from training.model import NFNet
 
 
 def test_terminal_semantics():
@@ -60,6 +64,44 @@ def test_puct_uses_sqrt_parent_visits():
     print("✓ PUCT 探索项使用 sqrt(N_parent)")
 
 
+def test_gumbel_root_policy_and_state_restoration():
+    """Gumbel 根 target 覆盖合法动作，预算守恒，且搜索不改盘面。"""
+    torch.manual_seed(13)
+    net = NFNet(3, 8, 1).eval()
+    s = env.create(8, 8, 2)
+    snap = ([row[:] for row in s.board], s.cur, s.history[:], s.phase)
+    bot = NNBot(net, device="cpu", sims=8, seed=5, gumbel=True,
+                gumbel_max_actions=8, gumbel_noise=False, full_gumbel=True)
+    result = bot.root_search(s)
+    assert np.isclose(result["visits"].sum(), 8), result["visits"].sum()
+    assert np.count_nonzero(result["visits"]) == 8
+    assert np.isclose(result["policy"].sum(), 1.0)
+    mask = np.frombuffer(env.legal_mask(s), dtype=np.uint8).astype(bool)
+    assert np.all(result["policy"][~mask] == 0)
+    assert result["gumbel_action"] in np.flatnonzero(mask)
+    assert ([r[:] for r in s.board], s.cur, s.history, s.phase) == snap
+    print("✓ Gumbel 根搜索预算守恒、completed-Q target 合法且状态还原")
+
+
+def test_gumbel_tree_reuse():
+    """已展开 child 可作为下一根继续搜索，累计访问不会丢失。"""
+    torch.manual_seed(17)
+    net = NFNet(3, 8, 1).eval()
+    s = env.create(8, 8, 2)
+    bot = NNBot(net, device="cpu", sims=8, seed=9, gumbel=True,
+                gumbel_max_actions=8, gumbel_noise=False, reuse_tree=True)
+    first = bot.root_search(s)
+    action = first["gumbel_action"]
+    rec, err = env.apply_move(s, action % 8, action // 8)
+    assert rec is not None, err
+    assert bot.advance_root(action)
+    second = bot.root_search(s)
+    assert second["visits"].sum() >= 8
+    assert second["gumbel_action"] in np.flatnonzero(
+        np.frombuffer(env.legal_mask(s), dtype=np.uint8).astype(bool))
+    print("✓ Gumbel 已展开子树可安全复用为下一根")
+
+
 def test_mcts_state_restoration():
     s = env.create(8, 8, 2)
     env.apply_move(s, 4, 4)
@@ -74,5 +116,7 @@ if __name__ == "__main__":
     test_terminal_semantics()
     test_greedy_finds_border_push()
     test_puct_uses_sqrt_parent_visits()
+    test_gumbel_root_policy_and_state_restoration()
+    test_gumbel_tree_reuse()
     test_mcts_state_restoration()
     print("全部通过")

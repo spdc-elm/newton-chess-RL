@@ -83,8 +83,8 @@ newton-force/
     ├── eval_policy_only.py    网页同款 AI 强度评估（纯策略 / 采样形态）
     ├── arena.py               同尺寸 checkpoint 分色循环赛 + Elo
     ├── bots/                  random / greedy（规则冒烟）/ mcts(纯UCT) / nn(PUCT+Dirichlet)
-    ├── training/              model(NFNet全卷积) / selfplay / train / export_web_model
-    ├── web/                   nf_replay.js(复盘树纯逻辑) + nf_app.js(主应用) + nf_model.json(权重) + nf_forward.js(JS前向) + nf_mcts_worker.js(PUCT Worker)
+    ├── training/              model(NFNet全卷积) / selfplay / train / export_web_model / build_web_model_registry
+    ├── web/                   nf_replay.js(复盘树纯逻辑) + nf_app.js(主应用/模型选择/model card) + nf_model.json(默认权重) + nf_models.json(registry) + nf_forward.js(JS前向) + nf_mcts_worker.js(PUCT Worker)
     ├── fixtures/              双端一致性夹具 + 前向验证向量
     └── runs/                  训练产物（metrics.jsonl + checkpoint + arena_report.md + loss_curves.png）
 ```
@@ -114,8 +114,9 @@ Worker，只显示搜索建议，不自动改变状态。搜索使用设置中�
 - 主线程游戏/UI/AI 适配：编辑 `rl/web/nf_app.js`；
 - 网络前向：编辑 `rl/web/nf_forward.js`；
 - 后台 PUCT、规则模拟和进度消息：编辑 `rl/web/nf_mcts_worker.js`；
-- 模型参数：由 checkpoint 通过 `export_web_model.py` 生成，不手改 base64；
-- 构建发布文件：运行 `python3 tools/build_html.py`；
+- 模型参数：由 checkpoint 通过 `export_web_model.py` 或四模型 registry 通过 `build_web_model_registry.py` 生成，不手改 base64；
+- 模型选择和 model card：编辑 `rl/web/nf_app.js` 与 `newton-force.template.html`，模型数据放在 `rl/web/nf_models.json`；
+- 构建发布文件：运行 `python3 tools/build_html.py`；CI 在 main push 后自动构建、测试并发布；
 - 构建后：运行 `sh test/run.sh`。
 
 如果发布版行为不对，先回到对应源模块修复，再重新构建，不能在 HTML 产物上打补丁。
