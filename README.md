@@ -4,6 +4,8 @@ Eight-way pushes, Newton-cradle chains, fewest border stones wins.
 
 Play: https://spdc-elm.github.io/newton-chess-RL/
 
+Origin note (Chinese): [牛顿棋RL 前言：我想训练出牛顿棋的第一个“AI棋圣”](https://mp.weixin.qq.com/s/MGVLSvDBtmHnKB4bPZsgeg)
+
 ## Build
 
 ```sh
