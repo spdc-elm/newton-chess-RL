@@ -290,14 +290,15 @@ button.warn{background:#fbe8e8; border-color:var(--danger); color:var(--danger);
 .forkbtn.sel{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); color:var(--accent); font-weight:700;}
 body.replay #board{box-shadow:0 14px 34px -16px rgba(60,54,42,.3), inset 0 0 0 2px rgba(201,138,20,.45);}
 
-/* 面板内元素顺序：主操作 → AI 分析状态 → 复盘跳步/棋谱/fork */
+/* 面板内元素顺序：主操作 → AI 分析状态 → 复盘跳步 → 棋谱标题/走法树/fork */
 #controls{order:1;}
 #hintControls{order:2;}
 #aiProgressRow{order:3;}
 #aiValueRow{order:4;}
 .replay-controls{order:5;}
-#moveTreeScroll{order:6;}
-#forkRow{order:7;}
+.analysis-header{order:6;}
+#moveTreeScroll{order:7;}
+#forkRow{order:8;}
 
 @media (min-width:900px){
   .game-shell{
@@ -320,8 +321,9 @@ body.replay #board{box-shadow:0 14px 34px -16px rgba(60,54,42,.3), inset 0 0 0 2
   #aiProgressRow{order:3;}
   #aiValueRow{order:4;}
   .replay-controls{order:5;}
-  #moveTreeScroll{order:6; flex:1; min-height:0; max-height:none;}
-  #forkRow{order:7;}
+  .analysis-header{order:6;}
+  #moveTreeScroll{order:7; flex:1; min-height:0; max-height:none;}
+  #forkRow{order:8;}
   body{padding-top:26px;}
   h1{font-size:28px;}
   #boardWrap{--board-border:3px;}
@@ -482,7 +484,6 @@ ol.rules b{color:var(--text);}
   </section>
 
   <aside class="analysis-panel">
-    <div class="analysis-header"><span>棋谱</span><span id="replayPos">— / —</span></div>
     <div id="controls">
       <button id="btnHint" class="hintbtn" disabled>AI 指导</button>
       <button id="btnSettle" class="primary" disabled>结算</button>
@@ -504,6 +505,7 @@ ol.rules b{color:var(--text);}
       <button id="btnNext"  class="rbtn" disabled aria-label="下一手">▶</button>
       <button id="btnLast"  class="rbtn" disabled aria-label="跳到末端">⏭</button>
     </div>
+    <div class="analysis-header"><span>棋谱</span><span id="replayPos">— / —</span></div>
     <div id="moveTreeScroll" aria-label="走法树"></div>
     <div id="forkRow" role="group" aria-label="分叉选择"></div>
   </aside>
