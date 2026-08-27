@@ -440,12 +440,11 @@ ol.rules b{color:var(--text);}
 
 /* ---------- 出处 ---------- */
 .site-credit{
-  width:min(100%,560px);
+  margin:6px 0 0;
   text-align:center;
   font-size:12px;
   color:var(--muted);
-  padding:2px 2px 10px;
-  line-height:1.6;
+  line-height:1.55;
 }
 .site-credit a{
   color:var(--muted);
@@ -460,7 +459,10 @@ ol.rules b{color:var(--text);}
 <body>
 <main class="game-shell">
   <section class="board-column">
-    <header><h1>牛顿棋 <span>NEWTON CHESS</span></h1></header>
+    <header>
+      <h1>牛顿棋 <span>NEWTON CHESS</span></h1>
+      <p class="site-credit">训练随笔 · <a href="https://mp.weixin.qq.com/s/MGVLSvDBtmHnKB4bPZsgeg" target="_blank" rel="noopener noreferrer">牛顿棋 RL 前言：我想训练出牛顿棋的第一个「AI 棋圣」</a></p>
+    </header>
 
     <div id="scorebar"></div>
     <div id="statusrow">
@@ -551,8 +553,6 @@ ol.rules b{color:var(--text);}
       </ol>
     </div>
   </details>
-
-  <p class="site-credit">训练随笔 · <a href="https://mp.weixin.qq.com/s/MGVLSvDBtmHnKB4bPZsgeg" target="_blank" rel="noopener noreferrer">牛顿棋 RL 前言：我想训练出牛顿棋的第一个「AI 棋圣」</a></p>
   </section>
 </main>
 
